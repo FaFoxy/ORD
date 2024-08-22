@@ -13,7 +13,7 @@ arqG = "games.dat"
 arqB = "btree.dat" 
 
 #RRN da raiz
-rrnRais = -1
+rrnRaiz = -1
 
 #@dataclass
 class paginaAvore:
@@ -22,6 +22,7 @@ class paginaAvore:
         self.chaves: int = [-1] * (ORDEM-1)
         self.offsetFilhos: int = [-1]*(ORDEM-1)
         self.filhos: int = [-1] * ORDEM
+
 def lePagina(RRN:int) -> None:
     offset = 4 + (RRN * tamRegbtree)
     pag = paginaAvore()
@@ -58,7 +59,38 @@ def insereNaPagina(chave, filhoD, pag:paginaAvore):
         pag.chaves.append(None)
     i = pag.numChaves
     while i > 0 and chave < pag.chaves [i-1]:
-        
+        pag.chaves[i] = pag.chaves[i-1]
+        pag.offsetFilhos[i] = pag.offsetFilhos[i-1]
+        pag.filhos[i] = pag.filhos[i-1]
+        i = i-1
+    pag.chaves[i] = chave
+    pag.offsetFilhos[i] = calcOffset(chave)
+    pag.filhos[i] = filhoD
+    pag.numChaves += 1       
+    
+def calcOffset(chave):
+    achou = False
+    with open(arqB, "rb") as arq:    
+        offset = 4
+        arq.read(4)
+        while arq and not achou:
+            tam = struct.unpack("<h", arq.read(2))[0]
+            reg = arq.read(tam).decode()
+            if int(reg.split("|")[0]) == chave:
+                achou = True
+                offset += 2
+            else:
+                achou = False
+                offset += 2
+        return offset
+    
+def novoRRN():
+    with open(arqB, "rb") as arq: #perguntar pro manu pq tava wb e nao rb
+        arq.seek(0, os.SEEK_END)
+        offset = arq.tell()
+        return (offset - 4) // tamRegbtree
+
+
 def buscaNaArvore(chave: int, rrn: int):
     if rrn == -1:
         return False, None, None
@@ -110,4 +142,52 @@ def insereNaArvore(chave, rrnAtual):
             escrevePagina(novapag, filhoDpro)
             return chavePro, filhoDpro, True
 
-def divide():
+def divide(chave, filhoD, pag):
+    insereNaPagina(chave, filhoD)
+    meio = ORDEM // 2
+    chavePro = pag.chaves[meio]
+    pAtual = paginaAvore()
+    pNova = paginaAvore()
+    filhoDpro = novoRRN()
+    for i in range(meio):
+        pAtual.chaves[i] = pag.chaves[i]
+        pAtual.filhos[i] = pag.filhos[i]
+        pAtual.offsetsFilhos[i] = pag.offsetsFilhos[i]
+        pAtual.numChaves += 1
+    for i in range(meio+1, ORDEM - 1):
+        pNova.chaves[i] = pag.chaves[i]
+        pNova.filhos[i] = pag.filhos[i]
+        pNova.offsetsFilhos[i] = pag.offsetsFilhos[i]
+        pNova.numChaves += 1
+    return chavePro, filhoDpro, pAtual, pNova
+
+def gerenciadorDeInsercao(rrnRaiz, chave):
+    chavePro, filhoDpro, promo = insereNaArvore(chave, rrnRaiz)
+    if promo: #vai vcirar uma nova pag raiz
+        print("Resto")
+        pNova = paginaAvore()
+        pNova.chaves[0] = chavePro
+        pNova.filhos[1] = filhoDpro
+        pNova.offsetFilhos[0] = calcOffset(chavePro)
+        pNova.numChaves += 1
+        rrnRaiz = novoRRN()
+        escrevePagina(rrnRaiz, pNova)
+    return rrnRaiz
+
+def principal():
+    global rrnRaiz
+    with open(arqG, "rb") as arq:
+        qtdReg = struct.unpack(">i", arq.read(4))[0]
+        for i in range(qtdReg - 1):
+            cab = i
+            cab = cab.to_bytes(4)
+            arq = open(arqB, 'wb')
+            arq.write(cab)
+            arq.close()
+            tam = struct.unpack('<h', arqG.read(2))[0]
+            reg = arqG.read(tam)
+            reg = reg.decode()
+            rrnRaiz = gerenciadorDeInsercao(rrnRaiz, int(reg.split("|")[0]))
+
+principal()
+
